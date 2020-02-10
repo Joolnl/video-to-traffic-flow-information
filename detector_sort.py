@@ -122,7 +122,7 @@ def detect_video(model, args):
 
     # TODO: Turn this into an external config file (relevant classes and mapping)
     relevant_classes = [
-        "boat"
+        "car"
     ]
     relevant_classes_indices = [classes.index(cls) for cls in relevant_classes]
 
