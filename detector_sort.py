@@ -11,6 +11,7 @@ import math
 import os.path as osp
 import os
 import sys
+import numpy
 from datetime import datetime
 from sort import *
 import pandas as pd
@@ -116,13 +117,13 @@ def format_output(bbox, uid, cls_ind, classes, read_frames, output_path, fps):
 def detect_video(model, args):
 
     input_size = [int(model.net_info['height']), int(model.net_info['width'])]
-    mot_tracker = Sort(min_hits=args.min_hits, max_age=args.max_age)
+    mot_tracker = Sort(min_hits=int(args.min_hits), max_age=int(args.max_age))
     colors = pkl.load(open("cfg/pallete", "rb"))
     classes = load_classes("cfg/coco.names")
 
     # TODO: Turn this into an external config file (relevant classes and mapping)
     relevant_classes = [
-        "boat"
+        "car"
     ]
     relevant_classes_indices = [classes.index(cls) for cls in relevant_classes]
 
@@ -153,10 +154,25 @@ def detect_video(model, args):
     start_time = datetime.now()
     print('Detecting...')
 
+    print(input_size, width, height)
+
     lod = []
     while cap.isOpened():
         retflag, frame = cap.read()
         read_frames += 1
+        # if read_frames % 5 != 0:
+        #     continue
+
+        # draw_collision_area(frame, [[187/3, 471/3], [466/3, 772/3], [219/3, 873/3], [66/3, 556/3]])
+        # draw_collision_area(frame, [[366/3, 223/3], [258/3, 172/3], [513/3, 93/3], [637/3, 118/3]])
+        # draw_collision_area(frame, [[1119/3, 115/3], [1242/3, 82/3], [1525/3, 138/3], [1473/3, 202/3]])
+        # draw_collision_area(frame, [[1377/3, 769/3], [1672/3, 424/3], [1887/3, 561/3], [1738/3, 900/3]])
+
+        # draw_collision_area(frame, [[0, 0], [320, 0], [320, 98], [0, 98]])
+        # draw_collision_area(frame, [[320, 0], [640, 0], [640, 98], [320, 98]])
+        # draw_collision_area(frame, [[0, 98], [320, 98], [320, 400], [0, 400]])
+        # draw_collision_area(frame, [[320, 98], [640, 98], [640, 400], [320, 400]])
+
         if retflag:
             frame_tensor = cv_image2tensor(frame, input_size).unsqueeze(0)
             frame_tensor = Variable(frame_tensor)
@@ -213,6 +229,11 @@ def detect_video(model, args):
     name = output_path.replace('.mp4', '.csv')
     pd.DataFrame(lod).to_csv(name, index=False)
     print('Detected meta data saved as ' + name)
+
+
+def draw_collision_area(f, points):
+    pts = numpy.array(points, numpy.int32)
+    cv2.polylines(f, [pts], True, (0, 255, 255), 5)
 
 
 def main():
