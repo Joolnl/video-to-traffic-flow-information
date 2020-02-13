@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import copy
 
 import torch
 import cv2
@@ -115,7 +116,6 @@ def format_output(bbox, uid, cls_ind, classes, read_frames, output_path, fps):
 
 
 def detect_video(model, args):
-
     input_size = [int(model.net_info['height']), int(model.net_info['width'])]
     mot_tracker = Sort(min_hits=int(args.min_hits), max_age=int(args.max_age))
     colors = pkl.load(open("cfg/pallete", "rb"))
@@ -159,6 +159,9 @@ def detect_video(model, args):
     lod = []
     while cap.isOpened():
         retflag, frame = cap.read()
+        frame2 = copy.deepcopy(frame)
+        draw_area_mask(frame)
+
         read_frames += 1
         # if read_frames % 5 != 0:
         #     continue
@@ -203,14 +206,14 @@ def detect_video(model, args):
                         bbox = obj[:4]
                         uid = int(obj[4])
                         cls_ind = int(obj[5])
-                        draw_bbox([frame], bbox, uid, cls_ind, colors, classes)
+                        draw_bbox([frame2], bbox, uid, cls_ind, colors, classes)
                         lod.append(format_output(bbox, uid, cls_ind, classes, read_frames, output_path, fps))
 
             if not args.no_show:
-                cv2.imshow('frame', frame)
+                cv2.imshow('frame', frame2)
             out.write(frame)
             if read_frames % 30 == 0:
-                print(f'Frames processed: {read_frames/total_frames*100:0.2f}%')
+                print(f'Frames processed: {read_frames / total_frames * 100:0.2f}%')
             if not args.no_show and cv2.waitKey(1) & 0xFF == ord('q'):
                 break
         else:
@@ -234,6 +237,20 @@ def detect_video(model, args):
 def draw_collision_area(f, points):
     pts = numpy.array(points, numpy.int32)
     cv2.polylines(f, [pts], True, (0, 255, 255), 5)
+
+
+def draw_area_mask(f):
+    center_coordinates = (940, 480)
+    axesLength = (750 + 500, 450 + 500)
+    angle = 0
+    startAngle = 0
+    endAngle = 360
+
+    color = (0, 0, 0)
+    thickness = 1000
+
+    cv2.ellipse(f, center_coordinates, axesLength,
+                angle, startAngle, endAngle, color, thickness)
 
 
 def main():
