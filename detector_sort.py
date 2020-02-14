@@ -17,6 +17,14 @@ from datetime import datetime
 from sort import *
 import pandas as pd
 
+from shapely.geometry import Point, Polygon, LineString
+
+bt = list()  # bottom top
+tb = list()  # top bottom
+count_vehicles = {}
+
+tb_line_points = [(235, 674), (840, 641)]
+bt_line_points = [(880, 638), (1350, 600)]
 
 def load_classes(namesfile):
     fp = open(namesfile, "r")
@@ -123,13 +131,14 @@ def detect_video(model, args):
 
     # TODO: Turn this into an external config file (relevant classes and mapping)
     relevant_classes = [
-        "car"
+        "car",
+        "truck"
     ]
     relevant_classes_indices = [classes.index(cls) for cls in relevant_classes]
 
     # If you want to merge classes together
     class_mapping = {
-        classes.index("boat"): [classes.index(cls) for cls in []]
+        classes.index("car"): [classes.index(cls) for cls in ['truck']]
     }
 
     if not osp.isdir(args.outdir):
@@ -154,27 +163,14 @@ def detect_video(model, args):
     start_time = datetime.now()
     print('Detecting...')
 
-    print(input_size, width, height)
-
     lod = []
     while cap.isOpened():
         retflag, frame = cap.read()
+        # frame2 = frame
         frame2 = copy.deepcopy(frame)
         draw_area_mask(frame)
 
         read_frames += 1
-        # if read_frames % 5 != 0:
-        #     continue
-
-        # draw_collision_area(frame, [[187/3, 471/3], [466/3, 772/3], [219/3, 873/3], [66/3, 556/3]])
-        # draw_collision_area(frame, [[366/3, 223/3], [258/3, 172/3], [513/3, 93/3], [637/3, 118/3]])
-        # draw_collision_area(frame, [[1119/3, 115/3], [1242/3, 82/3], [1525/3, 138/3], [1473/3, 202/3]])
-        # draw_collision_area(frame, [[1377/3, 769/3], [1672/3, 424/3], [1887/3, 561/3], [1738/3, 900/3]])
-
-        # draw_collision_area(frame, [[0, 0], [320, 0], [320, 98], [0, 98]])
-        # draw_collision_area(frame, [[320, 0], [640, 0], [640, 98], [320, 98]])
-        # draw_collision_area(frame, [[0, 98], [320, 98], [320, 400], [0, 400]])
-        # draw_collision_area(frame, [[320, 98], [640, 98], [640, 400], [320, 400]])
 
         if retflag:
             frame_tensor = cv_image2tensor(frame, input_size).unsqueeze(0)
@@ -206,12 +202,16 @@ def detect_video(model, args):
                         bbox = obj[:4]
                         uid = int(obj[4])
                         cls_ind = int(obj[5])
+                        draw_collision_lines(frame2)
                         draw_bbox([frame2], bbox, uid, cls_ind, colors, classes)
+                        count_object(bbox, uid)
+
+                        draw_count(frame2, f'Linker baan: {len(tb)} | Rechter baan: {len(bt)}')
                         lod.append(format_output(bbox, uid, cls_ind, classes, read_frames, output_path, fps))
 
             if not args.no_show:
                 cv2.imshow('frame', frame2)
-            out.write(frame)
+            out.write(frame2)
             if read_frames % 30 == 0:
                 print(f'Frames processed: {read_frames / total_frames * 100:0.2f}%')
             if not args.no_show and cv2.waitKey(1) & 0xFF == ord('q'):
@@ -234,24 +234,42 @@ def detect_video(model, args):
     print('Detected meta data saved as ' + name)
 
 
-def draw_collision_area(f, points):
-    pts = numpy.array(points, numpy.int32)
-    cv2.polylines(f, [pts], True, (0, 255, 255), 5)
+def count_object(bbox, uid):
+    x0, y0, x1, y1 = bbox.tolist()
+    box = Polygon([(x0, y0), (x1, y0), (x0, y1), (x1, y1)])
 
+    tb_line = LineString(tb_line_points)
+    bt_line = LineString(bt_line_points)
+
+    if box.intersects(tb_line) and uid not in tb and uid not in bt:
+        tb.append(uid)
+
+    if box.intersects(bt_line) and uid not in bt and uid not in tb:
+        bt.append(uid)
+
+def draw_count(f, value):
+    color = (255, 0, 0)
+    thickness = 2
+    org = (50, 50)
+    fontScale = 1
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    cv2.putText(f, value, org, font, fontScale, color, thickness, cv2.LINE_AA)
 
 def draw_area_mask(f):
-    center_coordinates = (940, 480)
-    axesLength = (750 + 500, 450 + 500)
-    angle = 0
-    startAngle = 0
-    endAngle = 360
-
     color = (0, 0, 0)
-    thickness = 1000
+    cv2.rectangle(f, (0, 0), (1920, 400), color, -1)
+    cv2.rectangle(f, (0, 0), (150, 1080), color, -1)
 
-    cv2.ellipse(f, center_coordinates, axesLength,
-                angle, startAngle, endAngle, color, thickness)
 
+def draw_collision_lines(f):
+    color = (0, 255, 0)
+    cv2.line(f, tb_line_points[0], tb_line_points[1], color, 5) # tb
+    cv2.line(f, bt_line_points[0], bt_line_points[1], color, 5) # bt
+
+def update_json(lane, bbox):
+    count_vehicles.append({
+        'lane': lane
+    })
 
 def main():
     args = parse_args()
