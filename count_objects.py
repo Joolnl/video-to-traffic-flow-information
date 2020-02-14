@@ -3,6 +3,7 @@ import json
 from collections import OrderedDict
 from pprint import pprint
 from shapely.geometry import Point, Polygon
+import pandas as pd
 
 
 def read_csv_to_dict():
@@ -48,6 +49,12 @@ def filter_same_points(path):
     else:
         return True
 
+  
+def toCsv(paths, output_file):
+  output_df = pd.DataFrame(paths)
+  output_df.to_csv(output_file, index=False)
+
+
 
 def main():
     paths = list()
@@ -56,9 +63,10 @@ def main():
         paths.append(determine_object_path(o))
 
     paths = list(filter(filter_same_points, paths))
-
-    pprint(paths)
-
+    output_file = "results/counted.csv"
+    
+    toCsv(paths, output_file)
+    print(f"Output written to {output_file}")
 
 if __name__ == '__main__':
     main()
