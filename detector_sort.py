@@ -281,7 +281,7 @@ def count_lane(bbox, uid):
 
     line = LineString([history_point, point])
 
-    merged_lanes = left_lane[0] + left_lane[1] + left_lane[2] + right_lane[0] + right_lane[1] + right_lane[2]
+    merged_lanes = left_lane_count[0] + left_lane_count[1] + left_lane_count[2] + right_lane_count[0] + right_lane_count[1] + right_lane_count[2]
 
     left0, left1, left2 = LineString(left_lane[0]), LineString(left_lane[1]), LineString(left_lane[2])
     right0, right1, right2 = LineString(right_lane[0]), LineString(right_lane[1]), LineString(right_lane[2])
