@@ -8,6 +8,7 @@ import sys
 from datetime import datetime
 
 import cv2
+import numpy
 import pandas as pd
 import torch
 from shapely.geometry import Polygon, LineString
@@ -38,6 +39,31 @@ right_lane = [
 
 left_lane_count = [list(), list(), list()]
 right_lane_count = [list(), list(), list()]
+
+line_a = [
+    [(387, 581), (735, 716)], #IN
+    [(270, 402), (387, 581)] #OUT
+]
+
+line_b = [
+    [(1595, 521), (1603, 372)], #IN
+    [(1131, 725), (1529, 600)] #OUT
+]
+
+line_c = [
+    [(373, 287), (528, 199)], #IN
+    [(779, 128), (626, 163)]  #OUT
+]
+
+line_d = [
+    [(1069, 126), (1230, 151)], #IN
+    [(1317, 173), (1479, 245)] #OUT
+]
+
+a_count = [list(), list()]
+b_count = [list(), list()]
+c_count = [list(), list()]
+d_count = [list(), list()]
 
 bbox_history = {}
 
@@ -182,8 +208,8 @@ def detect_video(model, args):
     lod = []
     while cap.isOpened():
         retflag, frame = cap.read()
-        # frame2 = frame
-        frame2 = copy.deepcopy(frame)
+        frame2 = frame
+        # frame2 = copy.deepcopy(frame)
         draw_area_mask(frame)
 
         read_frames += 1
@@ -221,11 +247,11 @@ def detect_video(model, args):
                         draw_collision_lines(frame2)
                         draw_bbox([frame2], bbox, uid, cls_ind, colors, classes)
 
-                        count_object(bbox, uid)
+                        # count_object(bbox, uid)
                         count_lane(bbox, uid)
 
-                        draw_count(frame2, f'Linker baan: {len(tb)} | Rechter baan: {len(bt)}')
-                        draw_lane_count(frame2)
+                        draw_count(frame2, f'A op: 1 af: 2 | B op: 2 af: 3 | C op: 2 af: 1 | D op: 7 af: 3')
+                        draw_direction_letter(frame2)
 
                         add_bbox_history(uid, bbox)
 
@@ -321,24 +347,32 @@ def draw_count(f, value):
     cv2.putText(f, value, org, font, fontScale, color, thickness, cv2.LINE_AA)
 
 
-def draw_lane_count(f):
-    color = (0, 0, 255)
+def draw_direction_letter(f):
+    color = (0, 255, 0)
     thickness = 2
     fontScale = 1
     font = cv2.FONT_HERSHEY_SIMPLEX
-    cv2.putText(f, f'{len(left_lane_count[0])}', (486, 820), font, fontScale, color, thickness, cv2.LINE_AA)
-    cv2.putText(f, f'{len(left_lane_count[1])}', (700, 795), font, fontScale, color, thickness, cv2.LINE_AA)
-    cv2.putText(f, f'{len(left_lane_count[2])}', (890, 775), font, fontScale, color, thickness, cv2.LINE_AA)
-
-    cv2.putText(f, f'{len(right_lane_count[0])}', (1150, 750), font, fontScale, color, thickness, cv2.LINE_AA)
-    cv2.putText(f, f'{len(right_lane_count[1])}', (1240, 738), font, fontScale, color, thickness, cv2.LINE_AA)
-    cv2.putText(f, f'{len(right_lane_count[2])}', (1367, 720), font, fontScale, color, thickness, cv2.LINE_AA)
+    cv2.putText(f, 'A', (307, 606), font, fontScale, color, thickness, cv2.LINE_AA)
+    cv2.putText(f, 'B', (1586, 572), font, fontScale, color, thickness, cv2.LINE_AA)
+    cv2.putText(f, 'C', (531, 166), font, fontScale, color, thickness, cv2.LINE_AA)
+    cv2.putText(f, 'D', (1304, 145), font, fontScale, color, thickness, cv2.LINE_AA)
 
 
 def draw_area_mask(f):
+    center_coordinates = (940, 480)
+    axesLength = (750 + 500, 450 + 500)
+    angle = 0
+    startAngle = 0
+    endAngle = 360
+
     color = (0, 0, 0)
-    cv2.rectangle(f, (0, 0), (1920, 400), color, -1)
-    cv2.rectangle(f, (0, 0), (150, 1080), color, -1)
+    thickness = 1000
+
+    cv2.ellipse(f, center_coordinates, axesLength, angle, startAngle, endAngle, color, thickness)
+
+    points = [[883, 95], [987, 113], [987, 130], [883, 110]]
+    pts = numpy.array(points, numpy.int32)
+    cv2.fillPoly(f, [pts], color)
 
 
 def draw_collision_lines(f):
@@ -346,16 +380,17 @@ def draw_collision_lines(f):
     color_red = (0, 0, 255)
     color_blue = (255, 0, 0)
 
-    cv2.line(f, tb_line_points[0], tb_line_points[1], color_green, 5)  # tb
-    cv2.line(f, bt_line_points[0], bt_line_points[1], color_green, 5)  # bt
+    cv2.line(f, line_a[0][0], line_a[0][1], color_red, 5)
+    cv2.line(f, line_a[1][0], line_a[1][1], color_blue, 5)
 
-    cv2.line(f, left_lane[0][0], left_lane[0][1], color_red, 5)
-    cv2.line(f, left_lane[1][0], left_lane[1][1], color_blue, 5)
-    cv2.line(f, left_lane[2][0], left_lane[2][1], color_red, 5)
+    cv2.line(f, line_b[0][0], line_b[0][1], color_red, 5)
+    cv2.line(f, line_b[1][0], line_b[1][1], color_blue, 5)
 
-    cv2.line(f, right_lane[0][0], right_lane[0][1], color_red, 5)
-    cv2.line(f, right_lane[1][0], right_lane[1][1], color_blue, 5)
-    cv2.line(f, right_lane[2][0], right_lane[2][1], color_red, 5)
+    cv2.line(f, line_c[0][0], line_c[0][1], color_red, 5)
+    cv2.line(f, line_c[1][0], line_c[1][1], color_blue, 5)
+
+    cv2.line(f, line_d[0][0], line_d[0][1], color_red, 5)
+    cv2.line(f, line_d[1][0], line_d[1][1], color_blue, 5)
 
 
 def add_to_csv(lane, bbox, uid):
