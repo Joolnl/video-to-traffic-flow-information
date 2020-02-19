@@ -18,46 +18,26 @@ from darknet import Darknet
 from sort import *
 from util import process_result, cv_image2tensor, transform_result
 
-bt = list()  # bottom top
-tb = list()  # top bottom
 count_vehicles = list()
 
-tb_line_points = [(235, 674), (840, 641)]
-bt_line_points = [(880, 638), (1350, 600)]
-
-left_lane = [
-    [(235, 673), (480, 660)],
-    [(480, 660), (638, 652)],
-    [(638, 652), (840, 641)],
-]
-
-right_lane = [
-    [(876, 638), (978, 629)],
-    [(978, 629), (1080, 622)],
-    [(1080, 622), (1349, 600)]
-]
-
-left_lane_count = [list(), list(), list()]
-right_lane_count = [list(), list(), list()]
-
 line_a = [
-    [(387, 581), (735, 716)], #IN
-    [(270, 402), (387, 581)] #OUT
+    [(387, 581), (782, 737)],  # IN
+    [(270, 402), (387, 581)]  # OUT
 ]
 
 line_b = [
-    [(1595, 521), (1603, 372)], #IN
-    [(1131, 725), (1529, 600)] #OUT
+    [(1595, 521), (1680, 410)],  # IN
+    [(1078, 764), (1529, 600)]  # OUT
 ]
 
 line_c = [
-    [(373, 287), (528, 199)], #IN
-    [(779, 128), (626, 163)]  #OUT
+    [(336, 312), (528, 199)],  # IN
+    [(779, 128), (626, 163)]  # OUT
 ]
 
 line_d = [
-    [(1069, 126), (1230, 151)], #IN
-    [(1317, 173), (1479, 245)] #OUT
+    [(1069, 126), (1230, 151)],  # IN
+    [(1317, 173), (1479, 245)]  # OUT
 ]
 
 a_count = [list(), list()]
@@ -208,8 +188,8 @@ def detect_video(model, args):
     lod = []
     while cap.isOpened():
         retflag, frame = cap.read()
-        frame2 = frame
-        # frame2 = copy.deepcopy(frame)
+        # frame2 = frame
+        frame2 = copy.deepcopy(frame)
         draw_area_mask(frame)
 
         read_frames += 1
@@ -247,11 +227,14 @@ def detect_video(model, args):
                         draw_collision_lines(frame2)
                         draw_bbox([frame2], bbox, uid, cls_ind, colors, classes)
 
-                        # count_object(bbox, uid)
-                        count_lane(bbox, uid)
+                        count_directions(bbox, uid)
+                        draw_count(frame2,
+                                   f'A op: {len(a_count[0])} af: {len(a_count[1])} | '
+                                   f'B op: {len(b_count[0])} af: {len(b_count[1])} | '
+                                   f'C op: {len(c_count[0])} af: {len(c_count[1])} | '
+                                   f'D op: {len(d_count[0])} af: {len(d_count[1])}')
 
-                        draw_count(frame2, f'A op: 1 af: 2 | B op: 2 af: 3 | C op: 2 af: 1 | D op: 7 af: 3')
-                        draw_direction_letter(frame2)
+                        draw_direction_letters(frame2)
 
                         add_bbox_history(uid, bbox)
 
@@ -282,23 +265,7 @@ def detect_video(model, args):
     print('Detected meta data saved as ' + name)
 
 
-def count_object(bbox, uid):
-    x0, y0, x1, y1 = bbox.tolist()
-    box = Polygon([(x0, y0), (x1, y0), (x0, y1), (x1, y1)])
-
-    tb_line = LineString(tb_line_points)
-    bt_line = LineString(bt_line_points)
-
-    if box.intersects(tb_line) and uid not in tb and uid not in bt:
-        tb.append(uid)
-        add_to_csv('left', bbox, uid)
-
-    if box.intersects(bt_line) and uid not in bt and uid not in tb:
-        bt.append(uid)
-        add_to_csv('right', bbox, uid)
-
-
-def count_lane(bbox, uid):
+def count_directions(bbox, uid):
     if uid not in bbox_history.keys():
         return
 
@@ -307,24 +274,31 @@ def count_lane(bbox, uid):
 
     line = LineString([history_point, point])
 
-    merged_lanes = left_lane[0] + left_lane[1] + left_lane[2] + right_lane[0] + right_lane[1] + right_lane[2]
+    a0, a1 = LineString(line_a[0]), LineString(line_a[1])
+    b0, b1 = LineString(line_b[0]), LineString(line_b[1])
+    c0, c1 = LineString(line_c[0]), LineString(line_c[1])
+    d0, d1 = LineString(line_d[0]), LineString(line_d[1])
 
-    left0, left1, left2 = LineString(left_lane[0]), LineString(left_lane[1]), LineString(left_lane[2])
-    right0, right1, right2 = LineString(right_lane[0]), LineString(right_lane[1]), LineString(right_lane[2])
+    update_line_on_intersect(line, a0, a_count[0], a_count[0] + a_count[1], uid, bbox, True, 'A')
+    update_line_on_intersect(line, a1, a_count[1], a_count[0] + a_count[1], uid, bbox, False, 'A')
 
-    update_line_on_intersect(line, left0, left_lane_count[0], merged_lanes, uid, 0)
-    update_line_on_intersect(line, left1, left_lane_count[1], merged_lanes, uid, 1)
-    update_line_on_intersect(line, left2, left_lane_count[2], merged_lanes, uid, 2)
+    update_line_on_intersect(line, b0, b_count[0], b_count[0] + b_count[1], uid, bbox, True, 'B')
+    update_line_on_intersect(line, b1, b_count[1], b_count[0] + b_count[1], uid, bbox, False, 'B')
 
-    update_line_on_intersect(line, right0, right_lane_count[0], merged_lanes, uid, 0)
-    update_line_on_intersect(line, right1, right_lane_count[1], merged_lanes, uid, 1)
-    update_line_on_intersect(line, right2, right_lane_count[2], merged_lanes, uid, 2)
+    update_line_on_intersect(line, c0, c_count[0], c_count[0] + c_count[1], uid, bbox, True, 'C')
+    update_line_on_intersect(line, c1, c_count[1], c_count[0] + c_count[1], uid, bbox, False, 'C')
+
+    update_line_on_intersect(line, d0, d_count[0], d_count[0] + d_count[1], uid, bbox, True, 'D')
+    update_line_on_intersect(line, d1, d_count[1], d_count[0] + d_count[1], uid, bbox, False, 'D')
 
 
-def update_line_on_intersect(line, lane, lane_count, merged_lanes, uid, lane_number):
-    if line.intersects(lane) and uid not in merged_lanes:
+def update_line_on_intersect(line, lane, lane_count, listed, uid, bbox, enter=True, letter='A'):
+    if line.intersects(lane) and uid not in listed:
         lane_count.append(uid)
-        update_lane_in_csv(uid, lane_number)
+        if enter is True:
+            update_vehicle_count(uid, bbox, enter=letter)
+        else:
+            update_vehicle_count(uid, bbox, leave=letter)
 
 
 def get_center_bottom_point(bbox):
@@ -341,13 +315,13 @@ def add_bbox_history(uid, bbox):
 def draw_count(f, value):
     color = (255, 0, 0)
     thickness = 2
-    org = (50, 50)
+    org = (25, 40)
     fontScale = 1
     font = cv2.FONT_HERSHEY_SIMPLEX
     cv2.putText(f, value, org, font, fontScale, color, thickness, cv2.LINE_AA)
 
 
-def draw_direction_letter(f):
+def draw_direction_letters(f):
     color = (0, 255, 0)
     thickness = 2
     fontScale = 1
@@ -360,7 +334,7 @@ def draw_direction_letter(f):
 
 def draw_area_mask(f):
     center_coordinates = (940, 480)
-    axesLength = (750 + 500, 450 + 500)
+    axesLength = (750 + 500 + 100, 450 + 500 + 100)
     angle = 0
     startAngle = 0
     endAngle = 360
@@ -370,13 +344,12 @@ def draw_area_mask(f):
 
     cv2.ellipse(f, center_coordinates, axesLength, angle, startAngle, endAngle, color, thickness)
 
-    points = [[883, 95], [987, 113], [987, 130], [883, 110]]
+    points = [[878, 89], [994, 107], [994, 133], [878, 113]]
     pts = numpy.array(points, numpy.int32)
     cv2.fillPoly(f, [pts], color)
 
 
 def draw_collision_lines(f):
-    color_green = (0, 255, 0)
     color_red = (0, 0, 255)
     color_blue = (255, 0, 0)
 
@@ -393,27 +366,30 @@ def draw_collision_lines(f):
     cv2.line(f, line_d[1][0], line_d[1][1], color_blue, 5)
 
 
-def add_to_csv(lane, bbox, uid):
-    count_vehicles.append({
-        'lane': lane,
-        'box': bbox,
-        'uid': uid
-    })
+def update_vehicle_count(uid, bbox, enter=None, leave=None):
+    items = list(filter(lambda x: x['uid'] == uid, count_vehicles))
 
-    save_lanes_csv()
+    if len(items) < 1:
+        item = {'uid': uid}
+
+        if enter is not None:
+            item['enter'] = enter
+        if leave is not None:
+            item['leave'] = leave
+
+        count_vehicles.append(item)
+    else:
+        for item in items:
+            if enter is not None:
+                item['enter'] = enter
+            if leave is not None:
+                item['leave'] = leave
+
+    save_roundabout_csv()
 
 
-def save_lanes_csv():
-    pd.DataFrame(count_vehicles).to_csv("output/lanes.csv")
-
-
-def update_lane_in_csv(uid, lane_index):
-    vehicles = filter(lambda x: x['uid'] == uid, count_vehicles)
-
-    for vehicle in vehicles:
-        vehicle['lane_number'] = int(lane_index)
-
-    save_lanes_csv()
+def save_roundabout_csv():
+    pd.DataFrame(count_vehicles).to_csv("output/roundabout.csv")
 
 
 def main():
@@ -437,4 +413,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
