@@ -6,7 +6,7 @@ frame_threshold = 40  # matchen van twee items mag maximaal zoveel frames tussen
 
 
 def read_csv_to_dict():
-    with open("output/roundabout2.csv") as result:
+    with open("output/roundabout.csv") as result:
         stream = csv.DictReader(result)
         for item in stream:
             data.append(item)

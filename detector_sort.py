@@ -154,13 +154,14 @@ def detect_video(model, args):
     # TODO: Turn this into an external config file (relevant classes and mapping)
     relevant_classes = [
         "car",
-        "truck"
+        "truck",
+        "bus"
     ]
     relevant_classes_indices = [classes.index(cls) for cls in relevant_classes]
 
     # If you want to merge classes together
     class_mapping = {
-        classes.index("car"): [classes.index(cls) for cls in ['truck']]
+        classes.index("car"): [classes.index(cls) for cls in ['truck', 'bus']]
     }
 
     if not osp.isdir(args.outdir):
