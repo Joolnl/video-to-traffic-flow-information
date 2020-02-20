@@ -192,7 +192,10 @@ def detect_video(model, args):
         frame2 = copy.deepcopy(frame)
         draw_area_mask(frame)
 
+        # framecount
         read_frames += 1
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        duration = read_frames / fps
 
         if retflag:
             frame_tensor = cv_image2tensor(frame, input_size).unsqueeze(0)
@@ -226,6 +229,14 @@ def detect_video(model, args):
                         cls_ind = int(obj[5])
                         draw_collision_lines(frame2)
                         draw_bbox([frame2], bbox, uid, cls_ind, colors, classes)
+
+                        if len(list(filter(lambda x: x['uid'] == uid, count_vehicles))) < 1:
+                            update_vehicle_count(uid, starting_position=bbox, starting_frame=read_frames,
+                                                 starting_duration=duration)
+
+                        # when the video is done, the ending position is accurate, position of last frame
+                        update_vehicle_count(uid, ending_position=bbox, ending_frame=read_frames,
+                                             ending_duration=duration)
 
                         count_directions(bbox, uid)
                         draw_count(frame2,
@@ -279,26 +290,26 @@ def count_directions(bbox, uid):
     c0, c1 = LineString(line_c[0]), LineString(line_c[1])
     d0, d1 = LineString(line_d[0]), LineString(line_d[1])
 
-    update_line_on_intersect(line, a0, a_count[0], a_count[0] + a_count[1], uid, bbox, True, 'A')
-    update_line_on_intersect(line, a1, a_count[1], a_count[0] + a_count[1], uid, bbox, False, 'A')
+    update_line_on_intersect(line, a0, a_count[0], a_count[0] + a_count[1], uid, True, 'A')
+    update_line_on_intersect(line, a1, a_count[1], a_count[0] + a_count[1], uid, False, 'A')
 
-    update_line_on_intersect(line, b0, b_count[0], b_count[0] + b_count[1], uid, bbox, True, 'B')
-    update_line_on_intersect(line, b1, b_count[1], b_count[0] + b_count[1], uid, bbox, False, 'B')
+    update_line_on_intersect(line, b0, b_count[0], b_count[0] + b_count[1], uid, True, 'B')
+    update_line_on_intersect(line, b1, b_count[1], b_count[0] + b_count[1], uid, False, 'B')
 
-    update_line_on_intersect(line, c0, c_count[0], c_count[0] + c_count[1], uid, bbox, True, 'C')
-    update_line_on_intersect(line, c1, c_count[1], c_count[0] + c_count[1], uid, bbox, False, 'C')
+    update_line_on_intersect(line, c0, c_count[0], c_count[0] + c_count[1], uid, True, 'C')
+    update_line_on_intersect(line, c1, c_count[1], c_count[0] + c_count[1], uid, False, 'C')
 
-    update_line_on_intersect(line, d0, d_count[0], d_count[0] + d_count[1], uid, bbox, True, 'D')
-    update_line_on_intersect(line, d1, d_count[1], d_count[0] + d_count[1], uid, bbox, False, 'D')
+    update_line_on_intersect(line, d0, d_count[0], d_count[0] + d_count[1], uid, True, 'D')
+    update_line_on_intersect(line, d1, d_count[1], d_count[0] + d_count[1], uid, False, 'D')
 
 
-def update_line_on_intersect(line, lane, lane_count, listed, uid, bbox, enter=True, letter='A'):
+def update_line_on_intersect(line, lane, lane_count, listed, uid, enter=True, letter='A'):
     if line.intersects(lane) and uid not in listed:
         lane_count.append(uid)
         if enter is True:
-            update_vehicle_count(uid, bbox, enter=letter)
+            update_vehicle_count(uid, enter=letter)
         else:
-            update_vehicle_count(uid, bbox, leave=letter)
+            update_vehicle_count(uid, leave=letter)
 
 
 def get_center_bottom_point(bbox):
@@ -366,7 +377,10 @@ def draw_collision_lines(f):
     cv2.line(f, line_d[1][0], line_d[1][1], color_blue, 5)
 
 
-def update_vehicle_count(uid, bbox, enter=None, leave=None):
+def update_vehicle_count(uid, enter=None, leave=None,
+                         starting_position=None, ending_position=None,
+                         starting_frame=None, ending_frame=None,
+                         starting_duration=None, ending_duration=None):
     items = list(filter(lambda x: x['uid'] == uid, count_vehicles))
 
     if len(items) < 1:
@@ -376,6 +390,18 @@ def update_vehicle_count(uid, bbox, enter=None, leave=None):
             item['enter'] = enter
         if leave is not None:
             item['leave'] = leave
+        if starting_position is not None:
+            item['starting_position'] = starting_position
+        if ending_position is not None:
+            item['ending_position'] = ending_position
+        if starting_frame is not None:
+            item['starting_frame'] = starting_frame
+        if ending_frame is not None:
+            item['ending_frame'] = ending_frame
+        if starting_duration is not None:
+            item['starting_duration'] = starting_duration
+        if ending_frame is not None:
+            item['ending_duration'] = ending_duration
 
         count_vehicles.append(item)
     else:
@@ -384,12 +410,24 @@ def update_vehicle_count(uid, bbox, enter=None, leave=None):
                 item['enter'] = enter
             if leave is not None:
                 item['leave'] = leave
+            if starting_position is not None:
+                item['starting_position'] = starting_position
+            if ending_position is not None:
+                item['ending_position'] = ending_position
+            if starting_frame is not None:
+                item['starting_frame'] = starting_frame
+            if ending_frame is not None:
+                item['ending_frame'] = ending_frame
+            if starting_duration is not None:
+                item['starting_duration'] = starting_duration
+            if ending_frame is not None:
+                item['ending_duration'] = ending_duration
 
     save_roundabout_csv()
 
 
 def save_roundabout_csv():
-    pd.DataFrame(count_vehicles).to_csv("output/roundabout.csv")
+    pd.DataFrame(count_vehicles).to_csv("output/roundabout.csv", index=False)
 
 
 def main():
