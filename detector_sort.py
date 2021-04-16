@@ -1,21 +1,45 @@
 #!/usr/bin/env python
 import copy
-
-import torch
-import cv2
-from torch.autograd import Variable
-from darknet import Darknet
-from util import process_result, cv_image2tensor, transform_result
-import pickle as pkl
-import argparse
 import math
-import os.path as osp
 import os
+import os.path as osp
+import pickle as pkl
 import sys
-import numpy
 from datetime import datetime
-from sort import *
+
+import cv2
 import pandas as pd
+import torch
+from shapely.geometry import Polygon, LineString
+from torch.autograd import Variable
+
+from darknet import Darknet
+from sort import *
+from util import process_result, cv_image2tensor, transform_result
+
+bt = list()  # bottom top
+tb = list()  # top bottom
+count_vehicles = list()
+
+tb_line_points = [(235, 674), (840, 641)]
+bt_line_points = [(880, 638), (1350, 600)]
+
+left_lane = [
+    [(235, 673), (480, 660)],
+    [(480, 660), (638, 652)],
+    [(638, 652), (840, 641)],
+]
+
+right_lane = [
+    [(876, 638), (978, 629)],
+    [(978, 629), (1080, 622)],
+    [(1080, 622), (1349, 600)]
+]
+
+left_lane_count = [list(), list(), list()]
+right_lane_count = [list(), list(), list()]
+
+bbox_history = {}
 
 
 def load_classes(namesfile):
@@ -123,13 +147,14 @@ def detect_video(model, args):
 
     # TODO: Turn this into an external config file (relevant classes and mapping)
     relevant_classes = [
-        "car"
+        "car",
+        "truck"
     ]
     relevant_classes_indices = [classes.index(cls) for cls in relevant_classes]
 
     # If you want to merge classes together
     class_mapping = {
-        classes.index("boat"): [classes.index(cls) for cls in []]
+        classes.index("car"): [classes.index(cls) for cls in ['truck']]
     }
 
     if not osp.isdir(args.outdir):
@@ -154,27 +179,14 @@ def detect_video(model, args):
     start_time = datetime.now()
     print('Detecting...')
 
-    print(input_size, width, height)
-
     lod = []
     while cap.isOpened():
         retflag, frame = cap.read()
+        # frame2 = frame
         frame2 = copy.deepcopy(frame)
         draw_area_mask(frame)
 
         read_frames += 1
-        # if read_frames % 5 != 0:
-        #     continue
-
-        # draw_collision_area(frame, [[187/3, 471/3], [466/3, 772/3], [219/3, 873/3], [66/3, 556/3]])
-        # draw_collision_area(frame, [[366/3, 223/3], [258/3, 172/3], [513/3, 93/3], [637/3, 118/3]])
-        # draw_collision_area(frame, [[1119/3, 115/3], [1242/3, 82/3], [1525/3, 138/3], [1473/3, 202/3]])
-        # draw_collision_area(frame, [[1377/3, 769/3], [1672/3, 424/3], [1887/3, 561/3], [1738/3, 900/3]])
-
-        # draw_collision_area(frame, [[0, 0], [320, 0], [320, 98], [0, 98]])
-        # draw_collision_area(frame, [[320, 0], [640, 0], [640, 98], [320, 98]])
-        # draw_collision_area(frame, [[0, 98], [320, 98], [320, 400], [0, 400]])
-        # draw_collision_area(frame, [[320, 98], [640, 98], [640, 400], [320, 400]])
 
         if retflag:
             frame_tensor = cv_image2tensor(frame, input_size).unsqueeze(0)
@@ -206,12 +218,22 @@ def detect_video(model, args):
                         bbox = obj[:4]
                         uid = int(obj[4])
                         cls_ind = int(obj[5])
+                        draw_collision_lines(frame2)
                         draw_bbox([frame2], bbox, uid, cls_ind, colors, classes)
+
+                        count_object(bbox, uid)
+                        count_lane(bbox, uid)
+
+                        draw_count(frame2, f'Linker baan: {len(tb)} | Rechter baan: {len(bt)}')
+                        draw_lane_count(frame2)
+
+                        add_bbox_history(uid, bbox)
+
                         lod.append(format_output(bbox, uid, cls_ind, classes, read_frames, output_path, fps))
 
             if not args.no_show:
                 cv2.imshow('frame', frame2)
-            out.write(frame)
+            out.write(frame2)
             if read_frames % 30 == 0:
                 print(f'Frames processed: {read_frames / total_frames * 100:0.2f}%')
             if not args.no_show and cv2.waitKey(1) & 0xFF == ord('q'):
@@ -234,23 +256,129 @@ def detect_video(model, args):
     print('Detected meta data saved as ' + name)
 
 
-def draw_collision_area(f, points):
-    pts = numpy.array(points, numpy.int32)
-    cv2.polylines(f, [pts], True, (0, 255, 255), 5)
+def count_object(bbox, uid):
+    x0, y0, x1, y1 = bbox.tolist()
+    box = Polygon([(x0, y0), (x1, y0), (x0, y1), (x1, y1)])
+
+    tb_line = LineString(tb_line_points)
+    bt_line = LineString(bt_line_points)
+
+    if box.intersects(tb_line) and uid not in tb and uid not in bt:
+        tb.append(uid)
+        add_to_csv('left', bbox, uid)
+
+    if box.intersects(bt_line) and uid not in bt and uid not in tb:
+        bt.append(uid)
+        add_to_csv('right', bbox, uid)
+
+
+def count_lane(bbox, uid):
+    if uid not in bbox_history.keys():
+        return
+
+    point = get_center_bottom_point(bbox)
+    history_point = bbox_history[uid]
+
+    line = LineString([history_point, point])
+
+    merged_lanes = left_lane_count[0] + left_lane_count[1] + left_lane_count[2] + right_lane_count[0] + right_lane_count[1] + right_lane_count[2]
+
+    left0, left1, left2 = LineString(left_lane[0]), LineString(left_lane[1]), LineString(left_lane[2])
+    right0, right1, right2 = LineString(right_lane[0]), LineString(right_lane[1]), LineString(right_lane[2])
+
+    update_line_on_intersect(line, left0, left_lane_count[0], merged_lanes, uid, 0)
+    update_line_on_intersect(line, left1, left_lane_count[1], merged_lanes, uid, 1)
+    update_line_on_intersect(line, left2, left_lane_count[2], merged_lanes, uid, 2)
+
+    update_line_on_intersect(line, right0, right_lane_count[0], merged_lanes, uid, 0)
+    update_line_on_intersect(line, right1, right_lane_count[1], merged_lanes, uid, 1)
+    update_line_on_intersect(line, right2, right_lane_count[2], merged_lanes, uid, 2)
+
+
+def update_line_on_intersect(line, lane, lane_count, merged_lanes, uid, lane_number):
+    if line.intersects(lane) and uid not in merged_lanes:
+        lane_count.append(uid)
+        update_lane_in_csv(uid, lane_number)
+
+
+def get_center_bottom_point(bbox):
+    x0, y0, x1, y1 = bbox.tolist()
+    x = ((x0 + x1) / 2)
+
+    return x, y1
+
+
+def add_bbox_history(uid, bbox):
+    bbox_history[uid] = get_center_bottom_point(bbox)
+
+
+def draw_count(f, value):
+    color = (255, 0, 0)
+    thickness = 2
+    org = (50, 50)
+    fontScale = 1
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    cv2.putText(f, value, org, font, fontScale, color, thickness, cv2.LINE_AA)
+
+
+def draw_lane_count(f):
+    color = (0, 0, 255)
+    thickness = 2
+    fontScale = 1
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    cv2.putText(f, f'{len(left_lane_count[0])}', (486, 820), font, fontScale, color, thickness, cv2.LINE_AA)
+    cv2.putText(f, f'{len(left_lane_count[1])}', (700, 795), font, fontScale, color, thickness, cv2.LINE_AA)
+    cv2.putText(f, f'{len(left_lane_count[2])}', (890, 775), font, fontScale, color, thickness, cv2.LINE_AA)
+
+    cv2.putText(f, f'{len(right_lane_count[0])}', (1150, 750), font, fontScale, color, thickness, cv2.LINE_AA)
+    cv2.putText(f, f'{len(right_lane_count[1])}', (1240, 738), font, fontScale, color, thickness, cv2.LINE_AA)
+    cv2.putText(f, f'{len(right_lane_count[2])}', (1367, 720), font, fontScale, color, thickness, cv2.LINE_AA)
 
 
 def draw_area_mask(f):
-    center_coordinates = (940, 480)
-    axesLength = (750 + 500, 450 + 500)
-    angle = 0
-    startAngle = 0
-    endAngle = 360
-
     color = (0, 0, 0)
-    thickness = 1000
+    cv2.rectangle(f, (0, 0), (1920, 400), color, -1)
+    cv2.rectangle(f, (0, 0), (150, 1080), color, -1)
 
-    cv2.ellipse(f, center_coordinates, axesLength,
-                angle, startAngle, endAngle, color, thickness)
+
+def draw_collision_lines(f):
+    color_green = (0, 255, 0)
+    color_red = (0, 0, 255)
+    color_blue = (255, 0, 0)
+
+    cv2.line(f, tb_line_points[0], tb_line_points[1], color_green, 5)  # tb
+    cv2.line(f, bt_line_points[0], bt_line_points[1], color_green, 5)  # bt
+
+    cv2.line(f, left_lane[0][0], left_lane[0][1], color_red, 5)
+    cv2.line(f, left_lane[1][0], left_lane[1][1], color_blue, 5)
+    cv2.line(f, left_lane[2][0], left_lane[2][1], color_red, 5)
+
+    cv2.line(f, right_lane[0][0], right_lane[0][1], color_red, 5)
+    cv2.line(f, right_lane[1][0], right_lane[1][1], color_blue, 5)
+    cv2.line(f, right_lane[2][0], right_lane[2][1], color_red, 5)
+
+
+def add_to_csv(lane, bbox, uid):
+    count_vehicles.append({
+        'lane': lane,
+        'box': bbox,
+        'uid': uid
+    })
+
+    save_lanes_csv()
+
+
+def save_lanes_csv():
+    pd.DataFrame(count_vehicles).to_csv("output/lanes.csv")
+
+
+def update_lane_in_csv(uid, lane_index):
+    vehicles = filter(lambda x: x['uid'] == uid, count_vehicles)
+
+    for vehicle in vehicles:
+        vehicle['lane_number'] = int(lane_index)
+
+    save_lanes_csv()
 
 
 def main():
@@ -274,3 +402,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
